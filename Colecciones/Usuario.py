@@ -14,7 +14,7 @@ def crear_usuario(nombre, apellido, correo, contraseña, roles=None):
         "estadoCuenta": "activo",
         "fechaBaneo": None,
         "createdAt": datetime.now(),
-        "upeatedAt": datetime.now()
+        "updatedAt": datetime.now()
     }
 
     return usuario

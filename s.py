@@ -53,8 +53,8 @@ def generar_usuarios(cantidad=20):
         usuario_id = registrar_usuario(
             nombre=fake.first_name(),
             apellido=fake.last_name(),
-            email=f"admin{i+1}@test.com",
-            password=fake.password(),
+            correo=f"admin{i+1}@test.com",
+            contraseña=fake.password(),
             roles=["Admin"]
         )
         usuarios_ids.append(usuario_id)
@@ -71,8 +71,8 @@ def generar_usuarios(cantidad=20):
         usuario_id = registrar_usuario(
             nombre=fake.first_name(),
             apellido=fake.last_name(),
-            email=fake.email(),
-            password=fake.password(),
+            correo=fake.email(),
+            contraseña=fake.password(),
             roles=roles
         )
         usuarios_ids.append(usuario_id)
@@ -103,8 +103,8 @@ def generar_comercios(propietarios_ids, cantidad=10):
             ciudad=fake.city(),
             provincia="Chaco",
             codigo_postal=fake.postcode(),
-            lat=fake.latitude(),
-            long=fake.longitude()
+            lat=float(fake.latitude()),
+            long=float(fake.longitude())
         )
         
         propietario = random.choice(propietarios_ids)
