@@ -1,7 +1,7 @@
 from pymongo import MongoClient
 
 
-client = MongoClient("mongodb+srv://mirchenkofacu:Facu1234@cluster0.fzd5jif.mongodb.net/")
+client = MongoClient("mongodb+srv://mirchenkofacu:Facu123456789@cluster0.fzd5jif.mongodb.net/")
 
 bd = client["DondeQueda"]
 
