@@ -326,7 +326,7 @@ def aceptar_reporte_y_sancionar(reporte_id, admin_id, dar_strike=True, eliminar_
             
             notificaciones = []
             for admin in admins:
-                if str(admin["_id"]) != str(admin_id):  # No notificar al admin que procesó
+                if str(admin["_id"]) != str(admin_id):
                     notificaciones.append({
                         "usuarioId": admin["_id"],
                         "tipo": "reporte_resuelto",
