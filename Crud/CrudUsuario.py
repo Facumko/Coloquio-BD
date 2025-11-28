@@ -5,9 +5,6 @@ from bson import ObjectId
 from Conexion import bd
 from Colecciones.Usuario import crear_usuario
 
-# ==========================================
-# CRUD BÁSICO
-# ==========================================
 
 def registrar_usuario(nombre, apellido, correo, contraseña, roles=None):
     """Registra un nuevo usuario en la base de datos."""
@@ -111,10 +108,6 @@ def desbanear_usuario(usuario_id):
     )
     return resultado.modified_count > 0
 
-
-# ==========================================
-# ROLES
-# ==========================================
 
 def agregar_rol(usuario_id, rol):
     """Agrega un rol al usuario si no lo tiene."""
