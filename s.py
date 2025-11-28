@@ -1,541 +1,464 @@
+# s.py - Script para cargar datos de prueba RANDOM con Faker
 import sys
-sys.path.append('..')
-from datetime import datetime
+sys.path.append('.')
+from datetime import datetime, timedelta
 from bson import ObjectId
-from pymongo.errors import PyMongoError
-from Conexion import bd, client
+from Conexion import bd
+import random
+from faker import Faker
+
+# Importar CRUDs
+from Crud.CrudUsuario import registrar_usuario
+from Crud.CrudComercio import registrar_comercio
+from Crud.CrudPublicacion import crear_publicacion_db
+from Crud.CrudComentario import crear_comentario_db, incrementar_reportes
+from Crud.CrudReporte import crear_reporte_db
+from Crud.CrudNotificacion import crear_notificacion_db, crear_notificacion_admin
+
+# Importar estructuras
+from Colecciones.Comercio import crear_direccion
+
+# Inicializar Faker en español
+fake = Faker('es_ES')
+
+print("\n" + "="*70)
+print("🚀 CARGANDO DATOS ALEATORIOS CON FAKER")
+print("="*70)
 
 # ==========================================
-# FUNCIONES AUXILIARES - CONSULTA
+# CONFIGURACIÓN
 # ==========================================
+CANT_USUARIOS = 30
+CANT_COMERCIOS = 15
+CANT_PUBLICACIONES_POR_COMERCIO = (3, 8)  # Entre 3 y 8
+CANT_EVENTOS = 5
+CANT_COMENTARIOS_POR_PUBLICACION = (2, 10)  # Entre 2 y 10
+PROBABILIDAD_COMENTARIO_MALO = 0.15  # 15% de comentarios problemáticos
 
-def obtener_reportes_pendientes():
-    """
-    Obtiene todos los reportes pendientes de procesamiento.
-    """
-    reportes = list(bd.reportes.find(
-        {"estado": "pendiente"}
-    ).sort("createAt", 1))
-    
-    return reportes
+# ==========================================
+# PASO 2: CREAR USUARIOS
+# ==========================================
+print(f"\n👥 Creando {CANT_USUARIOS} usuarios...")
 
+usuarios_ids = []
+admins_ids = []
+propietarios_ids = []
+usuarios_normales_ids = []
 
-def obtener_detalles_reporte(reporte_id):
-    """
-    Obtiene todos los detalles de un reporte para que el admin pueda revisarlo.
-    
-    Returns:
-        dict: Información completa del reporte, comentario y usuarios involucrados
-    """
-    reporte = bd.reportes.find_one({"_id": ObjectId(reporte_id)})
-    
-    if not reporte:
-        return None
-    
-    # Obtener el comentario
-    comentario = bd.comentarios.find_one({"_id": reporte["comentarioId"]})
-    
-    # Obtener usuario reportado
-    usuario_reportado = bd.usuarios.find_one({"_id": reporte["usuarioReportado"]})
-    
-    # Obtener usuario que reportó
-    usuario_reportante = bd.usuarios.find_one({"_id": reporte["usuarioQueReporta"]})
-    
-    # Obtener contenido (publicación o evento)
-    contenido = None
-    if comentario:
-        if comentario["tipoContenido"] == "publicacion":
-            contenido = bd.publicaciones.find_one({"_id": comentario["contenidoId"]})
-        elif comentario["tipoContenido"] == "evento":
-            contenido = bd.eventos.find_one({"_id": comentario["contenidoId"]})
-    
-    return {
-        "reporte": reporte,
-        "comentario": comentario,
-        "usuario_reportado": usuario_reportado,
-        "usuario_reportante": usuario_reportante,
-        "contenido": contenido
-    }
+# 1. Crear al menos 2 admins
+for i in range(2):
+    usuario_id = registrar_usuario(
+        nombre=fake.first_name(),
+        apellido=fake.last_name(),
+        correo=f"admin{i+1}@dondeqeda.com",
+        contraseña=fake.password(),
+        roles=["Usuario", "Admin"]
+    )
+    if usuario_id:
+        usuarios_ids.append(usuario_id)
+        admins_ids.append(usuario_id)
 
+# 2. Crear propietarios (30% de los usuarios restantes)
+cant_propietarios = int((CANT_USUARIOS - 2) * 0.3)
+for i in range(cant_propietarios):
+    usuario_id = registrar_usuario(
+        nombre=fake.first_name(),
+        apellido=fake.last_name(),
+        correo=fake.unique.email(),
+        contraseña=fake.password(),
+        roles=["Usuario", "Propietario"]
+    )
+    if usuario_id:
+        usuarios_ids.append(usuario_id)
+        propietarios_ids.append(usuario_id)
 
-def mostrar_reporte_detallado(reporte_id):
-    """
-    Muestra todos los detalles de un reporte de forma legible para revisión.
-    """
-    detalles = obtener_detalles_reporte(reporte_id)
+# 3. Crear usuarios normales
+usuarios_restantes = CANT_USUARIOS - len(usuarios_ids)
+for i in range(usuarios_restantes):
+    usuario_id = registrar_usuario(
+        nombre=fake.first_name(),
+        apellido=fake.last_name(),
+        correo=fake.unique.email(),
+        contraseña=fake.password(),
+        roles=["Usuario"]
+    )
+    if usuario_id:
+        usuarios_ids.append(usuario_id)
+        usuarios_normales_ids.append(usuario_id)
+
+# 4. Dar strikes a algunos usuarios random (para testing)
+usuarios_con_strikes = random.sample(usuarios_normales_ids, min(3, len(usuarios_normales_ids)))
+for usuario_id in usuarios_con_strikes:
+    strikes = random.randint(1, 2)
+    bd.usuarios.update_one(
+        {"_id": ObjectId(usuario_id)},
+        {"$set": {"strikes": strikes}}
+    )
+
+print(f"   ✅ {len(usuarios_ids)} usuarios creados")
+print(f"      - Admins: {len(admins_ids)}")
+print(f"      - Propietarios: {len(propietarios_ids)}")
+print(f"      - Usuarios normales: {len(usuarios_normales_ids)}")
+print(f"      - Usuarios con strikes: {len(usuarios_con_strikes)}")
+
+# ==========================================
+# PASO 3: CREAR COMERCIOS
+# ==========================================
+print(f"\n🏪 Creando {CANT_COMERCIOS} comercios...")
+
+comercios_ids = []
+categorias = [
+    "Gastronomía", "Salud y Bienestar", "Educación", "Tecnología",
+    "Moda", "Hogar y Decoración", "Entretenimiento", "Servicios Profesionales",
+    "Turismo", "Automotor"
+]
+
+nombres_comercios = {
+    "Gastronomía": ["Restaurante", "Parrilla", "Pizzería", "Café", "Bar", "Heladería"],
+    "Salud y Bienestar": ["Gimnasio", "Spa", "Nutrición", "Yoga", "Pilates"],
+    "Educación": ["Instituto", "Academia", "Escuela"],
+    "Tecnología": ["Tech", "Informática", "Reparaciones"],
+    "Moda": ["Boutique", "Tienda", "Moda"],
+    "Hogar y Decoración": ["Bazar", "Deco", "Muebles"],
+    "Entretenimiento": ["Cine", "Boliche", "Juegos"],
+    "Servicios Profesionales": ["Estudio", "Consultora"],
+    "Turismo": ["Agencia", "Turismo"],
+    "Automotor": ["Taller", "Repuestos"]
+}
+
+for i in range(CANT_COMERCIOS):
+    # Elegir propietario random
+    propietario_id = random.choice(propietarios_ids)
     
-    if not detalles:
-        print("❌ Reporte no encontrado")
-        return None
+    # Elegir categoría random
+    categoria = random.choice(categorias)
     
-    print("\n" + "="*70)
-    print("📋 DETALLES DEL REPORTE")
-    print("="*70)
+    # Generar nombre según categoría
+    tipo_comercio = random.choice(nombres_comercios[categoria])
+    nombre = f"{tipo_comercio} {fake.last_name()}"
     
-    # Información del reporte
-    reporte = detalles["reporte"]
-    print(f"\n🆔 ID del Reporte: {reporte['_id']}")
-    print(f"🚨 Motivo: {reporte['motivo']}")
-    print(f"📅 Fecha del reporte: {reporte.get('createAt', 'N/A')}")
-    print(f"📊 Estado: {reporte['estado']}")
+    # Crear dirección
+    direccion = crear_direccion(
+        calle=fake.street_name(),
+        numero=str(random.randint(100, 9999)),
+        ciudad="Resistencia",
+        provincia="Chaco",
+        codigo_postal="3500",
+        lat=round(-27.4514 + random.uniform(-0.05, 0.05), 6),
+        long=round(-58.9867 + random.uniform(-0.05, 0.05), 6)
+    )
     
-    # Información del comentario
-    comentario = detalles["comentario"]
-    if comentario:
-        print(f"\n💬 COMENTARIO REPORTADO:")
-        print(f"   📝 Texto: \"{comentario['texto']}\"")
-        print(f"   📊 Total de reportes recibidos: {comentario.get('cantidadReportes', 0)}")
-        print(f"   🗓️  Fecha del comentario: {comentario.get('createdAt', 'N/A')}")
-        print(f"   📍 Tipo de contenido: {comentario['tipoContenido']}")
+    # Crear horarios realistas
+    horario = {}
+    dias = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+    
+    for dia in dias[:5]:  # Lunes a viernes
+        horario[dia] = [
+            {"apertura": "09:00", "cierre": "13:00"},
+            {"apertura": "17:00", "cierre": "21:00"}
+        ]
+    
+    # Sábado
+    horario["sabado"] = [{"apertura": "09:00", "cierre": "14:00"}]
+    
+    # Domingo (algunos cierran)
+    if random.random() > 0.3:  # 70% abre los domingos
+        horario["domingo"] = [{"apertura": "10:00", "cierre": "13:00"}]
     else:
-        print("\n⚠️  Comentario no encontrado (posiblemente eliminado)")
+        horario["domingo"] = []
     
-    # Información del usuario reportado
-    usuario_reportado = detalles["usuario_reportado"]
-    if usuario_reportado:
-        print(f"\n👤 USUARIO REPORTADO:")
-        print(f"   Nombre: {usuario_reportado['nombre']} {usuario_reportado['apellido']}")
-        print(f"   Email: {usuario_reportado['correo']}")
-        print(f"   ⚠️  Strikes actuales: {usuario_reportado.get('strikes', 0)}/3")
-        print(f"   📊 Estado de cuenta: {usuario_reportado.get('estadoCuenta', 'activo')}")
+    # Registrar comercio
+    comercio_id = registrar_comercio(
+        propietario_id=propietario_id,
+        nombre=nombre,
+        descripcion=fake.text(max_nb_chars=200),
+        categoria=categoria,
+        telefono=fake.phone_number(),
+        correo=fake.email(),
+        direccion=direccion,
+        horario=horario
+    )
     
-    # Información del usuario que reportó
-    usuario_reportante = detalles["usuario_reportante"]
-    if usuario_reportante:
-        print(f"\n🚩 REPORTADO POR:")
-        print(f"   Nombre: {usuario_reportante['nombre']} {usuario_reportante['apellido']}")
-        print(f"   Email: {usuario_reportante['correo']}")
-    
-    print("\n" + "="*70)
-    
-    return detalles
+    if comercio_id:
+        comercios_ids.append(comercio_id)
 
+print(f"   ✅ {len(comercios_ids)} comercios creados")
 
 # ==========================================
-# TRANSACCIÓN 1: ACEPTAR REPORTE
+# PASO 4: CREAR PUBLICACIONES
 # ==========================================
+print(f"\n📝 Creando publicaciones...")
 
-def aceptar_reporte_y_sancionar(reporte_id, admin_id, dar_strike=True, eliminar_comentario=True):
-    """
-    TRANSACCIÓN: Acepta el reporte como válido y aplica sanciones.
-    
-    Pasos:
-    1. Marcar reporte como resuelto
-    2. (Opcional) Eliminar comentario si el admin lo decide
-    3. (Opcional) Dar strike al usuario si el admin lo decide
-    4. Si llega a 3 strikes → banear automáticamente
-    5. Notificar al usuario reportado
-    6. Notificar a los admins
-    
-    Args:
-        reporte_id: ID del reporte a procesar
-        admin_id: ID del admin que toma la decisión
-        dar_strike: Si se debe dar strike al usuario (default: True)
-        eliminar_comentario: Si se debe eliminar el comentario (default: True)
-    
-    Returns:
-        dict: Resultado de la operación
-    """
-    
-    with client.start_session() as session:
-        try:
-            session.start_transaction()
-            
-            print("\n" + "="*70)
-            print("✅ TRANSACCIÓN: ACEPTAR REPORTE Y SANCIONAR")
-            print("="*70)
-            
-            # PASO 1: Validar y obtener datos
-            print("\n📋 Validando reporte...")
-            
-            reporte = bd.reportes.find_one(
-                {"_id": ObjectId(reporte_id)},
-                session=session
-            )
-            
-            if not reporte:
-                raise ValueError("❌ Reporte no encontrado")
-            
-            if reporte["estado"] != "pendiente":
-                raise ValueError("❌ El reporte ya fue procesado")
-            
-            comentario_id = reporte["comentarioId"]
-            usuario_reportado_id = reporte["usuarioReportado"]
-            motivo = reporte["motivo"]
-            
-            print(f"   ✅ Reporte válido")
-            
-            # Obtener comentario
-            comentario = bd.comentarios.find_one(
-                {"_id": ObjectId(comentario_id)},
-                session=session
-            )
-            
-            if not comentario and eliminar_comentario:
-                raise ValueError("❌ Comentario no encontrado")
-            
-            # Obtener usuario
-            usuario = bd.usuarios.find_one(
-                {"_id": ObjectId(usuario_reportado_id)},
-                session=session
-            )
-            
-            if not usuario:
-                raise ValueError("❌ Usuario reportado no encontrado")
-            
-            strikes_actuales = usuario.get("strikes", 0)
-            
-            # PASO 2: Marcar reporte como resuelto y aceptado
-            print("\n📌 Marcando reporte como resuelto (ACEPTADO)...")
-            
-            bd.reportes.update_one(
-                {"_id": ObjectId(reporte_id)},
-                {
-                    "$set": {
-                        "estado": "resuelto",
-                        "adminId": ObjectId(admin_id),
-                        "comentarioEliminado": eliminar_comentario,
-                        "strikeAplicado": dar_strike,
-                        "updateAt": datetime.now()
-                    }
-                },
-                session=session
-            )
-            
-            print(f"   ✅ Reporte aceptado")
-            
-            # PASO 3: Eliminar comentario (si se decidió)
-            comentario_eliminado = False
-            if eliminar_comentario and comentario:
-                print("\n🗑️  Eliminando comentario...")
-                
-                resultado = bd.comentarios.delete_one(
-                    {"_id": ObjectId(comentario_id)},
-                    session=session
-                )
-                
-                if resultado.deleted_count > 0:
-                    comentario_eliminado = True
-                    print(f"   ✅ Comentario eliminado")
-                else:
-                    print(f"   ⚠️  No se pudo eliminar el comentario")
-            else:
-                print("\n📝 Comentario NO eliminado (decisión del admin)")
-            
-            # PASO 4: Dar strike (si se decidió)
-            nuevos_strikes = strikes_actuales
-            usuario_baneado = False
-            
-            if dar_strike:
-                print("\n⚠️  Aplicando strike...")
-                
-                nuevos_strikes = strikes_actuales + 1
-                
-                if nuevos_strikes >= 3:
-                    print(f"   🚫 Usuario alcanzó {nuevos_strikes} strikes - BANEANDO")
-                    
-                    bd.usuarios.update_one(
-                        {"_id": ObjectId(usuario_reportado_id)},
-                        {
-                            "$set": {
-                                "strikes": nuevos_strikes,
-                                "estadoCuenta": "baneado",
-                                "fechaBaneo": datetime.now(),
-                                "updatedAt": datetime.now()
-                            }
-                        },
-                        session=session
-                    )
-                    
-                    bd.reportes.update_one(
-                        {"_id": ObjectId(reporte_id)},
-                        {"$set": {"usuarioBaneado": True}},
-                        session=session
-                    )
-                    
-                    usuario_baneado = True
-                    print(f"   ✅ Usuario BANEADO")
-                    
-                else:
-                    bd.usuarios.update_one(
-                        {"_id": ObjectId(usuario_reportado_id)},
-                        {
-                            "$set": {
-                                "strikes": nuevos_strikes,
-                                "updatedAt": datetime.now()
-                            }
-                        },
-                        session=session
-                    )
-                    print(f"   ✅ Strike aplicado ({nuevos_strikes}/3)")
-            else:
-                print("\n📝 NO se aplicó strike (decisión del admin)")
-            
-            # PASO 5: Notificar al usuario reportado
-            print("\n🔔 Notificando al usuario reportado...")
-            
-            if usuario_baneado:
-                mensaje = f"Tu cuenta ha sido BANEADA por acumular 3 strikes. Motivo: {motivo}"
-                tipo_notif = "baneo"
-            elif dar_strike:
-                mensaje = f"Has recibido un STRIKE ({nuevos_strikes}/3). Motivo: {motivo}"
-                if comentario_eliminado:
-                    mensaje += " Tu comentario fue eliminado."
-                tipo_notif = "strike_recibido"
-            else:
-                mensaje = f"Tu comentario fue revisado por moderación. Motivo del reporte: {motivo}"
-                if comentario_eliminado:
-                    mensaje += " El comentario fue eliminado."
-                tipo_notif = "advertencia"
-            
-            bd.notificaciones.insert_one(
-                {
-                    "usuarioId": ObjectId(usuario_reportado_id),
-                    "tipo": tipo_notif,
-                    "mensaje": mensaje,
-                    "leida": False,
-                    "reporteId": ObjectId(reporte_id),
-                    "createdAt": datetime.now(),
-                    "expiraEn": datetime.now()
-                },
-                session=session
-            )
-            
-            print(f"   ✅ Usuario notificado")
-            
-            # PASO 6: Notificar a admins
-            print("\n📢 Notificando a administradores...")
-            
-            admins = list(bd.usuarios.find({"roles": "Admin"}, session=session))
-            
-            admin_procesador = bd.usuarios.find_one({"_id": ObjectId(admin_id)}, session=session)
-            nombre_admin = f"{admin_procesador['nombre']} {admin_procesador['apellido']}" if admin_procesador else "Admin"
-            
-            mensaje_admin = (
-                f"{nombre_admin} ACEPTÓ un reporte. "
-                f"Usuario: {usuario['nombre']} {usuario['apellido']}. "
-            )
-            
-            if usuario_baneado:
-                mensaje_admin += "USUARIO BANEADO."
-            elif dar_strike:
-                mensaje_admin += f"Strike aplicado ({nuevos_strikes}/3)."
-            
-            if comentario_eliminado:
-                mensaje_admin += " Comentario eliminado."
-            
-            notificaciones = []
-            for admin in admins:
-                if str(admin["_id"]) != str(admin_id):  # No notificar al admin que procesó
-                    notificaciones.append({
-                        "usuarioId": admin["_id"],
-                        "tipo": "reporte_resuelto",
-                        "mensaje": mensaje_admin,
-                        "leida": False,
-                        "reporteId": ObjectId(reporte_id),
-                        "createdAt": datetime.now(),
-                        "expiraEn": datetime.now()
-                    })
-            
-            if notificaciones:
-                bd.notificaciones.insert_many(notificaciones, session=session)
-            
-            print(f"   ✅ {len(notificaciones)} admins notificados")
-            
-            # COMMIT
-            print("\n💾 Guardando cambios...")
-            session.commit_transaction()
-            
-            print("\n" + "="*70)
-            print("✅ TRANSACCIÓN COMPLETADA - REPORTE ACEPTADO")
-            print("="*70)
-            
-            return {
-                "exito": True,
-                "accion": "aceptado",
-                "comentario_eliminado": comentario_eliminado,
-                "strike_aplicado": dar_strike,
-                "strikes_totales": nuevos_strikes,
-                "usuario_baneado": usuario_baneado,
-                "mensaje": "Reporte aceptado y procesado correctamente"
-            }
-            
-        except Exception as e:
-            print(f"\n❌ ERROR: {str(e)}")
-            print("🔄 Haciendo ROLLBACK...")
-            session.abort_transaction()
-            
-            return {
-                "exito": False,
-                "error": str(e),
-                "mensaje": "La transacción falló, no se aplicaron cambios"
-            }
+publicaciones_ids = []
+publicaciones_por_comercio = {}  # Para tracking
 
+titulos_ejemplo = [
+    "¡Nueva promoción especial!",
+    "Oferta del mes",
+    "No te lo pierdas",
+    "Últimos días de descuento",
+    "Llegó nueva mercadería",
+    "Atención clientes",
+    "Novedad del día",
+    "Producto destacado",
+    "Combo especial"
+]
 
-# ==========================================
-# TRANSACCIÓN 2: RECHAZAR REPORTE
-# ==========================================
-
-def rechazar_reporte(reporte_id, admin_id, motivo_rechazo="Reporte no válido"):
-    """
-    TRANSACCIÓN: Rechaza el reporte como inválido.
+for comercio_id in comercios_ids:
+    # Cantidad random de publicaciones por comercio
+    cant_pubs = random.randint(*CANT_PUBLICACIONES_POR_COMERCIO)
+    publicaciones_por_comercio[comercio_id] = []
     
-    Pasos:
-    1. Marcar reporte como rechazado
-    2. Notificar al usuario que reportó
-    3. No se aplican sanciones al usuario reportado
-    
-    Args:
-        reporte_id: ID del reporte a rechazar
-        admin_id: ID del admin que toma la decisión
-        motivo_rechazo: Razón por la que se rechaza
-    
-    Returns:
-        dict: Resultado de la operación
-    """
-    
-    with client.start_session() as session:
-        try:
-            session.start_transaction()
-            
-            print("\n" + "="*70)
-            print("❌ TRANSACCIÓN: RECHAZAR REPORTE")
-            print("="*70)
-            
-            # Validar reporte
-            print("\n📋 Validando reporte...")
-            
-            reporte = bd.reportes.find_one(
-                {"_id": ObjectId(reporte_id)},
-                session=session
-            )
-            
-            if not reporte:
-                raise ValueError("❌ Reporte no encontrado")
-            
-            if reporte["estado"] != "pendiente":
-                raise ValueError("❌ El reporte ya fue procesado")
-            
-            print(f"   ✅ Reporte válido")
-            
-            # Marcar como rechazado
-            print("\n📌 Marcando reporte como RECHAZADO...")
-            
-            bd.reportes.update_one(
-                {"_id": ObjectId(reporte_id)},
-                {
-                    "$set": {
-                        "estado": "rechazado",
-                        "adminId": ObjectId(admin_id),
-                        "motivoRechazo": motivo_rechazo,
-                        "updateAt": datetime.now()
-                    }
-                },
-                session=session
-            )
-            
-            print(f"   ✅ Reporte rechazado")
-            
-            # Notificar a admins
-            print("\n📢 Notificando a administradores...")
-            
-            admins = list(bd.usuarios.find({"roles": "Admin"}, session=session))
-            admin_procesador = bd.usuarios.find_one({"_id": ObjectId(admin_id)}, session=session)
-            nombre_admin = f"{admin_procesador['nombre']} {admin_procesador['apellido']}" if admin_procesador else "Admin"
-            
-            mensaje_admin = f"{nombre_admin} RECHAZÓ un reporte. Motivo: {motivo_rechazo}"
-            
-            notificaciones = []
-            for admin in admins:
-                if str(admin["_id"]) != str(admin_id):
-                    notificaciones.append({
-                        "usuarioId": admin["_id"],
-                        "tipo": "reporte_rechazado",
-                        "mensaje": mensaje_admin,
-                        "leida": False,
-                        "reporteId": ObjectId(reporte_id),
-                        "createdAt": datetime.now(),
-                        "expiraEn": datetime.now()
-                    })
-            
-            if notificaciones:
-                bd.notificaciones.insert_many(notificaciones, session=session)
-            
-            print(f"   ✅ {len(notificaciones)} admins notificados")
-            
-            # COMMIT
-            print("\n💾 Guardando cambios...")
-            session.commit_transaction()
-            
-            print("\n" + "="*70)
-            print("✅ TRANSACCIÓN COMPLETADA - REPORTE RECHAZADO")
-            print("="*70)
-            
-            return {
-                "exito": True,
-                "accion": "rechazado",
-                "motivo": motivo_rechazo,
-                "mensaje": "Reporte rechazado correctamente"
-            }
-            
-        except Exception as e:
-            print(f"\n❌ ERROR: {str(e)}")
-            print("🔄 Haciendo ROLLBACK...")
-            session.abort_transaction()
-            
-            return {
-                "exito": False,
-                "error": str(e),
-                "mensaje": "La transacción falló"
-            }
-
-
-# ==========================================
-# EJEMPLO DE USO
-# ==========================================
-
-if __name__ == "__main__":
-    print("\n" + "="*70)
-    print("🧪 PRUEBA DEL SISTEMA DE MODERACIÓN")
-    print("="*70)
-    
-    # Obtener reportes pendientes
-    reportes = obtener_reportes_pendientes()
-    
-    if not reportes:
-        print("\n⚠️  No hay reportes pendientes")
-        print("💡 Ejecuta s.py para generar datos de prueba")
-    else:
-        print(f"\n📋 Hay {len(reportes)} reportes pendientes")
+    for _ in range(cant_pubs):
+        titulo = random.choice(titulos_ejemplo)
+        descripcion = fake.text(max_nb_chars=300)
         
-        # Mostrar el primer reporte
-        reporte_id = str(reportes[0]["_id"])
-        mostrar_reporte_detallado(reporte_id)
+        # 50% de probabilidad de tener imágenes
+        imagenes = []
+        if random.random() > 0.5:
+            cant_imagenes = random.randint(1, 3)
+            imagenes = [f"https://picsum.photos/800/600?random={random.randint(1, 1000)}" 
+                       for _ in range(cant_imagenes)]
         
-        # Obtener un admin
-        admin = bd.usuarios.find_one({"roles": "Admin"})
+        pub_id = crear_publicacion_db(
+            comercio_id=comercio_id,
+            titulo=titulo,
+            descripcion=descripcion,
+            imagenes=imagenes
+        )
         
-        if admin:
-            admin_id = str(admin["_id"])
-            
-            print("\n🎯 Opciones disponibles:")
-            print("1. Aceptar reporte (eliminar comentario + dar strike)")
-            print("2. Aceptar reporte (solo eliminar comentario)")
-            print("3. Aceptar reporte (solo dar strike)")
-            print("4. Rechazar reporte")
-            
-            # Para prueba automática, acepta el reporte
-            print("\n🧪 EJECUTANDO PRUEBA: Aceptar y sancionar...")
-            resultado = aceptar_reporte_y_sancionar(
-                reporte_id=reporte_id,
-                admin_id=admin_id,
-                dar_strike=True,
-                eliminar_comentario=True
-            )
-            
-            if resultado["exito"]:
-                print("\n✅ PRUEBA EXITOSA")
-            else:
-                print(f"\n❌ PRUEBA FALLIDA: {resultado['error']}")
+        if pub_id:
+            publicaciones_ids.append(pub_id)
+            publicaciones_por_comercio[comercio_id].append(pub_id)
+
+print(f"   ✅ {len(publicaciones_ids)} publicaciones creadas")
+
+# ==========================================
+# PASO 5: CREAR EVENTOS
+# ==========================================
+print(f"\n🎉 Creando {CANT_EVENTOS} eventos...")
+
+eventos_ids = []
+
+titulos_eventos = [
+    "Gran inauguración",
+    "Fiesta de aniversario",
+    "Evento especial",
+    "Noche temática",
+    "Festival",
+    "Jornada de puertas abiertas",
+    "Día del cliente"
+]
+
+for i in range(CANT_EVENTOS):
+    comercio_creador = random.choice(comercios_ids)
+    comercio_data = bd.comercios.find_one({"_id": ObjectId(comercio_creador)})
+    
+    fecha_inicio = fake.date_time_between(start_date='+1d', end_date='+60d')
+    duracion_horas = random.randint(2, 8)
+    fecha_fin = fecha_inicio + timedelta(hours=duracion_horas)
+    
+    # Crear evento usando la estructura de colección
+    from Colecciones.Eventos import crear_evento
+    
+    evento = crear_evento(
+        comercio_creador_id=comercio_creador,
+        titulo=random.choice(titulos_eventos),
+        descripcion=fake.text(max_nb_chars=250),
+        fecha_inicio=fecha_inicio,
+        fecha_fin=fecha_fin,
+        ubicacion=comercio_data["direccion"],
+        imagenes=[f"https://picsum.photos/1200/800?random={random.randint(1, 1000)}"],
+        comercios_invitados=[]
+    )
+    
+    resultado = bd.eventos.insert_one(evento)
+    eventos_ids.append(resultado.inserted_id)
+
+print(f"   ✅ {len(eventos_ids)} eventos creados")
+
+# ==========================================
+# PASO 6: CREAR COMENTARIOS
+# ==========================================
+print(f"\n💬 Creando comentarios...")
+
+comentarios_ids = []
+comentarios_malos_ids = []
+
+comentarios_positivos = [
+    "¡Excelente servicio! Muy recomendable.",
+    "Me encantó, volveré sin dudas.",
+    "Buena atención y precios accesibles.",
+    "Lo mejor de la zona, sin dudas.",
+    "Muy buena calidad, superó mis expectativas.",
+    "Atención de primera, muy profesionales.",
+    "Ambiente agradable y cómodo.",
+    "Vale la pena visitarlos!"
+]
+
+comentarios_negativos = [
+    "Pésimo servicio, nunca más vuelvo.",
+    "Una estafa total, no lo recomiendo para nada.",
+    "Muy mala atención, el dueño es un desastre.",
+    "Horrible experiencia, pérdida de tiempo y dinero.",
+    "No funciona nada, todo sucio y descuidado.",
+    "Empleados maleducados y producto de mala calidad."
+]
+
+for pub_id in publicaciones_ids:
+    # Cantidad random de comentarios
+    cant_comentarios = random.randint(*CANT_COMENTARIOS_POR_PUBLICACION)
+    
+    for _ in range(cant_comentarios):
+        autor_id = random.choice(usuarios_ids)
+        
+        # Decidir si es comentario bueno o malo
+        es_malo = random.random() < PROBABILIDAD_COMENTARIO_MALO
+        
+        if es_malo:
+            texto = random.choice(comentarios_negativos)
         else:
-            print("\n⚠️  No hay admins en la BD")
+            texto = random.choice(comentarios_positivos)
+        
+        comentario_id = crear_comentario_db(
+            autor_id=autor_id,
+            contenido_id=pub_id,
+            tipo_contenido="publicacion",
+            texto=texto
+        )
+        
+        if comentario_id:
+            comentarios_ids.append(comentario_id)
+            if es_malo:
+                comentarios_malos_ids.append(comentario_id)
+
+# Algunos comentarios en eventos
+for evento_id in eventos_ids:
+    cant_comentarios = random.randint(1, 5)
+    
+    for _ in range(cant_comentarios):
+        autor_id = random.choice(usuarios_ids)
+        texto = random.choice(comentarios_positivos)
+        
+        comentario_id = crear_comentario_db(
+            autor_id=autor_id,
+            contenido_id=evento_id,
+            tipo_contenido="evento",
+            texto=texto
+        )
+        
+        if comentario_id:
+            comentarios_ids.append(comentario_id)
+
+print(f"   ✅ {len(comentarios_ids)} comentarios creados")
+print(f"      - Comentarios problemáticos: {len(comentarios_malos_ids)}")
+
+# ==========================================
+# PASO 7: CREAR REPORTES
+# ==========================================
+print(f"\n🚨 Creando reportes sobre comentarios malos...")
+
+reportes_ids = []
+
+motivos_reporte = [
+    "Lenguaje ofensivo e inapropiado",
+    "Comentario falso y difamatorio",
+    "Acoso o intimidación",
+    "Contenido inapropiado",
+    "Spam o publicidad no deseada",
+    "Información falsa o engañosa"
+]
+
+# Reportar algunos comentarios malos
+comentarios_a_reportar = random.sample(
+    comentarios_malos_ids, 
+    min(len(comentarios_malos_ids), 10)  # Reportar hasta 10
+)
+
+for comentario_id in comentarios_a_reportar:
+    # Obtener datos del comentario
+    comentario = bd.comentarios.find_one({"_id": ObjectId(comentario_id)})
+    
+    if comentario:
+        # Cantidad de reportes (1-3)
+        cant_reportes = random.randint(1, 3)
+        
+        # Usuarios que reportan (diferentes)
+        reportantes = random.sample(usuarios_normales_ids, min(cant_reportes, len(usuarios_normales_ids)))
+        
+        for reportante_id in reportantes:
+            reporte_id = crear_reporte_db(
+                comentario_id=comentario_id,
+                usuario_que_reporta=reportante_id,
+                usuario_reportado=comentario["autorId"],
+                motivo=random.choice(motivos_reporte)
+            )
+            
+            if reporte_id:
+                reportes_ids.append(reporte_id)
+        
+        # Incrementar contador de reportes del comentario
+        for _ in range(cant_reportes):
+            incrementar_reportes(comentario_id)
+
+print(f"   ✅ {len(reportes_ids)} reportes creados")
+
+# ==========================================
+# PASO 8: CREAR NOTIFICACIONES
+# ==========================================
+print(f"\n🔔 Creando notificaciones...")
+
+# Notificar a admins sobre reportes pendientes
+if reportes_ids:
+    cant_notif = crear_notificacion_admin(
+        tipo="reporte_pendiente",
+        mensaje=f"Hay {len(reportes_ids)} reportes pendientes de revisión",
+        reporte_id=None
+    )
+    print(f"   ✅ {cant_notif} notificaciones enviadas a admins")
+
+# Notificar a usuarios reportados
+usuarios_reportados = set()
+for reporte_id in reportes_ids:
+    reporte = bd.reportes.find_one({"_id": ObjectId(reporte_id)})
+    if reporte:
+        usuarios_reportados.add(reporte["usuarioReportado"])
+
+for usuario_id in usuarios_reportados:
+    crear_notificacion_db(
+        usuario_id=usuario_id,
+        tipo="advertencia",
+        mensaje="Tu comentario ha sido reportado. Por favor, respeta las normas de la comunidad.",
+        reporte_id=None
+    )
+
+print(f"   ✅ {len(usuarios_reportados)} notificaciones enviadas a usuarios reportados")
+
+# ==========================================
+# RESUMEN FINAL
+# ==========================================
+print("\n" + "="*70)
+print("✅ CARGA DE DATOS COMPLETADA EXITOSAMENTE")
+print("="*70)
+
+print(f"\n📊 RESUMEN DE DATOS GENERADOS:")
+print(f"\n   👥 Usuarios: {len(usuarios_ids)}")
+print(f"      - Admins: {len(admins_ids)}")
+print(f"      - Propietarios: {len(propietarios_ids)}")
+print(f"      - Usuarios normales: {len(usuarios_normales_ids)}")
+print(f"      - Con strikes: {len(usuarios_con_strikes)}")
+
+print(f"\n   🏪 Comercios: {len(comercios_ids)}")
+print(f"   📝 Publicaciones: {len(publicaciones_ids)}")
+print(f"   🎉 Eventos: {len(eventos_ids)}")
+print(f"   💬 Comentarios: {len(comentarios_ids)}")
+print(f"      - Problemáticos: {len(comentarios_malos_ids)}")
+
+print(f"\n   🚨 Reportes: {len(reportes_ids)}")
+print(f"   🔔 Notificaciones: {len(usuarios_reportados) + cant_notif}")
+
+print("\n💡 SIGUIENTE PASO:")
+print("   ➜ python Menu.py")
+print("   ➜ Opción 2: Sistema de Moderación")
+
+print("\n" + "="*70)
