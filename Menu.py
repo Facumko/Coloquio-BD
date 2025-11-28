@@ -12,20 +12,6 @@ from Crud.CrudUsuario import (
     actualizar_usuario, eliminar_usuario, dar_strike, 
     banear_usuario, desbanear_usuario
 )
-from Crud.CrudComercio import (
-    registrar_comercio, buscar_comercio_id, actualizar_comercio,
-    eliminar_comercio
-)
-from Crud.CrudPublicacion import (
-    crear_publicacion_db, obtener_publicacion_por_id,
-    obtener_publicaciones_por_comercio, actualizar_publicacion,
-    eliminar_publicacion
-)
-from Crud.CrudComentario import (
-    crear_comentario_db, obtener_comentario_por_id,
-    obtener_comentarios_por_contenido, actualizar_comentario,
-    eliminar_comentario
-)
 
 # Importar funciones de transacción
 from Transaccion.Reporte import (
@@ -33,9 +19,6 @@ from Transaccion.Reporte import (
     mostrar_reporte_detallado, aceptar_reporte_y_sancionar,
     rechazar_reporte
 )
-
-# Importar estructuras
-from Colecciones.Comercio import crear_direccion
 
 # ==========================================
 # UTILIDADES
@@ -307,11 +290,7 @@ def listar_usuarios():
     
     except Exception as e:
         print(f"\n❌ Error: {e}")
-    
-    pausar()
-
-
-# ==========================================
+    # ==========================================
 # MÓDULO 2: SISTEMA DE MODERACIÓN
 # ==========================================
 
@@ -530,6 +509,114 @@ def mostrar_estadisticas_moderacion():
 
 
 # ==========================================
+# MÓDULO 3: VER NOTIFICACIONES
+# ==========================================
+
+def menu_ver_notificaciones():
+    """Menú para visualizar notificaciones de usuarios"""
+    while True:
+        limpiar_pantalla()
+        mostrar_encabezado("VER NOTIFICACIONES DE USUARIOS")
+        
+        print("\n1. 🔔 Ver notificaciones de un usuario")
+        print("2. 👥 Listar usuarios con notificaciones pendientes")
+        print("0. ⬅️  Volver")
+        
+        opcion = input("\n👉 Selecciona una opción: ").strip()
+        
+        if opcion == "1":
+            ver_notificaciones_usuario()
+        elif opcion == "2":
+            listar_usuarios_con_notificaciones()
+        elif opcion == "0":
+            break
+        else:
+            print("❌ Opción inválida")
+            pausar()
+
+
+def ver_notificaciones_usuario():
+    """Ver todas las notificaciones de un usuario"""
+    mostrar_encabezado("NOTIFICACIONES DE USUARIO")
+    
+    usuario_id = input("\n🆔 ID del usuario: ").strip()
+    
+    try:
+        usuario = buscar_usuario_id(usuario_id)
+        
+        if not usuario:
+            print("\n❌ Usuario no encontrado")
+            pausar()
+            return
+        
+        print(f"\n👤 Usuario: {usuario['nombre']} {usuario['apellido']}")
+        print(f"📧 Correo: {usuario['correo']}")
+        
+        # Obtener notificaciones
+        notificaciones = list(bd.notificaciones.find(
+            {"usuarioId": ObjectId(usuario_id)}
+        ).sort("createdAt", -1).limit(20))
+        
+        if not notificaciones:
+            print("\n📭 No hay notificaciones")
+        else:
+            print(f"\n🔔 Total de notificaciones: {len(notificaciones)}\n")
+            
+            for i, notif in enumerate(notificaciones, 1):
+                estado = "✅ LEÍDA" if notif.get("leida") else "🔴 NO LEÍDA"
+                print(f"\n{'='*70}")
+                print(f"📌 NOTIFICACIÓN #{i} - {estado}")
+                print(f"{'='*70}")
+                print(f"🆔 ID: {notif['_id']}")
+                print(f"📝 Tipo: {notif.get('tipo', 'N/A')}")
+                print(f"💬 Mensaje: {notif.get('mensaje', 'N/A')}")
+                print(f"📅 Fecha: {notif.get('createdAt', 'N/A')}")
+    
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+    
+    pausar()
+
+
+def listar_usuarios_con_notificaciones():
+    """Lista usuarios que tienen notificaciones pendientes"""
+    mostrar_encabezado("USUARIOS CON NOTIFICACIONES PENDIENTES")
+    
+    try:
+        # Aggregate para contar notificaciones no leídas por usuario
+        pipeline = [
+            {"$match": {"leida": False}},
+            {"$group": {
+                "_id": "$usuarioId",
+                "total": {"$sum": 1}
+            }},
+            {"$sort": {"total": -1}},
+            {"$limit": 20}
+        ]
+        
+        resultados = list(bd.notificaciones.aggregate(pipeline))
+        
+        if not resultados:
+            print("\n✅ No hay notificaciones pendientes")
+        else:
+            print(f"\n📊 Usuarios con notificaciones no leídas: {len(resultados)}\n")
+            print(f"{'Usuario':<40} {'Pendientes':<15}")
+            print("-" * 55)
+            
+            for res in resultados:
+                usuario = bd.usuarios.find_one({"_id": res["_id"]})
+                if usuario:
+                    nombre = f"{usuario['nombre']} {usuario['apellido']}"[:39]
+                    total = res["total"]
+                    print(f"{nombre:<40} {total:<15}")
+    
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+    
+    pausar()
+
+
+# ==========================================
 # MENÚ PRINCIPAL
 # ==========================================
 
@@ -542,7 +629,7 @@ def menu_principal():
         print("\n📋 MÓDULOS DISPONIBLES:\n")
         print("1. 👥 CRUD de Usuarios")
         print("2. 🛡️  Sistema de Moderación (Transacciones)")
-        print("3. 📊 Informes y Estadísticas")
+        print("3. 🔔 Ver Notificaciones de Usuarios")
         print("4. 🔧 Utilidades")
         print("0. 🚪 Salir")
         
@@ -553,8 +640,7 @@ def menu_principal():
         elif opcion == "2":
             menu_moderacion()
         elif opcion == "3":
-            print("\n⚠️  Módulo de informes en desarrollo...")
-            pausar()
+            menu_ver_notificaciones()
         elif opcion == "4":
             menu_utilidades()
         elif opcion == "0":

@@ -125,7 +125,8 @@ def aceptar_reporte_y_sancionar(reporte_id, admin_id, dar_strike=True, eliminar_
     3. (Opcional) Dar strike al usuario si el admin lo decide
     4. Si llega a 3 strikes → banear automáticamente
     5. Notificar al usuario reportado
-    6. Notificar a los admins
+    6. Notificar al usuario que reportó ✅ NUEVO
+    7. Notificar a los admins
     
     Args:
         reporte_id: ID del reporte a procesar
@@ -161,6 +162,7 @@ def aceptar_reporte_y_sancionar(reporte_id, admin_id, dar_strike=True, eliminar_
             
             comentario_id = reporte["comentarioId"]
             usuario_reportado_id = reporte["usuarioReportado"]
+            usuario_reportante_id = reporte["usuarioQueReporta"]  # ✅ NUEVO
             motivo = reporte["motivo"]
             
             print(f"   ✅ Reporte válido")
@@ -275,24 +277,24 @@ def aceptar_reporte_y_sancionar(reporte_id, admin_id, dar_strike=True, eliminar_
             print("\n🔔 Notificando al usuario reportado...")
             
             if usuario_baneado:
-                mensaje = f"Tu cuenta ha sido BANEADA por acumular 3 strikes. Motivo: {motivo}"
+                mensaje_reportado = f"Tu cuenta ha sido BANEADA por acumular 3 strikes. Motivo: {motivo}"
                 tipo_notif = "baneo"
             elif dar_strike:
-                mensaje = f"Has recibido un STRIKE ({nuevos_strikes}/3). Motivo: {motivo}"
+                mensaje_reportado = f"Has recibido un STRIKE ({nuevos_strikes}/3). Motivo: {motivo}"
                 if comentario_eliminado:
-                    mensaje += " Tu comentario fue eliminado."
+                    mensaje_reportado += " Tu comentario fue eliminado."
                 tipo_notif = "strike_recibido"
             else:
-                mensaje = f"Tu comentario fue revisado por moderación. Motivo del reporte: {motivo}"
+                mensaje_reportado = f"Tu comentario fue revisado por moderación. Motivo del reporte: {motivo}"
                 if comentario_eliminado:
-                    mensaje += " El comentario fue eliminado."
+                    mensaje_reportado += " El comentario fue eliminado."
                 tipo_notif = "advertencia"
             
             bd.notificaciones.insert_one(
                 {
                     "usuarioId": ObjectId(usuario_reportado_id),
                     "tipo": tipo_notif,
-                    "mensaje": mensaje,
+                    "mensaje": mensaje_reportado,
                     "leida": False,
                     "reporteId": ObjectId(reporte_id),
                     "createdAt": datetime.now(),
@@ -301,7 +303,38 @@ def aceptar_reporte_y_sancionar(reporte_id, admin_id, dar_strike=True, eliminar_
                 session=session
             )
             
-            print(f"   ✅ Usuario notificado")
+            print(f"   ✅ Usuario reportado notificado")
+            
+            # ✅ PASO 5.5: NOTIFICAR AL USUARIO QUE REPORTÓ
+            print("\n🔔 Notificando al usuario que reportó...")
+            
+            if usuario_baneado:
+                mensaje_reportante = f"Tu reporte fue aceptado. El usuario fue BANEADO por acumular 3 strikes."
+            elif dar_strike:
+                mensaje_reportante = f"Tu reporte fue aceptado. Se aplicó un strike al usuario ({nuevos_strikes}/3)."
+                if comentario_eliminado:
+                    mensaje_reportante += " El comentario fue eliminado."
+            else:
+                mensaje_reportante = f"Tu reporte fue aceptado."
+                if comentario_eliminado:
+                    mensaje_reportante += " El comentario fue eliminado."
+                else:
+                    mensaje_reportante += " Se tomaron medidas."
+            
+            bd.notificaciones.insert_one(
+                {
+                    "usuarioId": ObjectId(usuario_reportante_id),
+                    "tipo": "reporte_aceptado",
+                    "mensaje": mensaje_reportante,
+                    "leida": False,
+                    "reporteId": ObjectId(reporte_id),
+                    "createdAt": datetime.now(),
+                    "expiraEn": datetime.now()
+                },
+                session=session
+            )
+            
+            print(f"   ✅ Usuario reportante notificado")
             
             # PASO 6: Notificar a admins
             print("\n📢 Notificando a administradores...")
@@ -382,8 +415,9 @@ def rechazar_reporte(reporte_id, admin_id, motivo_rechazo="Reporte no válido"):
     
     Pasos:
     1. Marcar reporte como rechazado
-    2. Notificar al usuario que reportó
-    3. No se aplican sanciones al usuario reportado
+    2. Notificar al usuario que reportó ✅ NUEVO
+    3. Notificar a los admins
+    4. No se aplican sanciones al usuario reportado
     
     Args:
         reporte_id: ID del reporte a rechazar
@@ -416,6 +450,8 @@ def rechazar_reporte(reporte_id, admin_id, motivo_rechazo="Reporte no válido"):
             if reporte["estado"] != "pendiente":
                 raise ValueError("❌ El reporte ya fue procesado")
             
+            usuario_reportante_id = reporte["usuarioQueReporta"]  # ✅ NUEVO
+            
             print(f"   ✅ Reporte válido")
             
             # Marcar como rechazado
@@ -435,6 +471,26 @@ def rechazar_reporte(reporte_id, admin_id, motivo_rechazo="Reporte no válido"):
             )
             
             print(f"   ✅ Reporte rechazado")
+            
+            # ✅ NOTIFICAR AL USUARIO QUE REPORTÓ
+            print("\n🔔 Notificando al usuario que reportó...")
+            
+            mensaje_reportante = f"Tu reporte fue rechazado. Motivo: {motivo_rechazo}"
+            
+            bd.notificaciones.insert_one(
+                {
+                    "usuarioId": ObjectId(usuario_reportante_id),
+                    "tipo": "reporte_rechazado",
+                    "mensaje": mensaje_reportante,
+                    "leida": False,
+                    "reporteId": ObjectId(reporte_id),
+                    "createdAt": datetime.now(),
+                    "expiraEn": datetime.now()
+                },
+                session=session
+            )
+            
+            print(f"   ✅ Usuario reportante notificado")
             
             # Notificar a admins
             print("\n📢 Notificando a administradores...")

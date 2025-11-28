@@ -1,4 +1,3 @@
-# s.py - Script para cargar datos de prueba RANDOM con Faker
 import sys
 sys.path.append('.')
 from datetime import datetime, timedelta
@@ -6,19 +5,14 @@ from bson import ObjectId
 from Conexion import bd
 import random
 from faker import Faker
-
-# Importar CRUDs
 from Crud.CrudUsuario import registrar_usuario
 from Crud.CrudComercio import registrar_comercio
 from Crud.CrudPublicacion import crear_publicacion_db
 from Crud.CrudComentario import crear_comentario_db, incrementar_reportes
 from Crud.CrudReporte import crear_reporte_db
 from Crud.CrudNotificacion import crear_notificacion_db, crear_notificacion_admin
-
-# Importar estructuras
 from Colecciones.Comercio import crear_direccion
 
-# Inicializar Faker en español
 fake = Faker('es_ES')
 
 print("\n" + "="*70)
