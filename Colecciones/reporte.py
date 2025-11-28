@@ -1,6 +1,6 @@
 from datetime import datetime
 
-def crerar_reporte(comentario_id, usuario_que_reporta, usuario_reportado, motivo):
+def crear_reporte(comentario_id, usuario_que_reporta, usuario_reportado, motivo):
     reporte = {
         "comentarioId": comentario_id,
         "usuarioQueReporta": usuario_que_reporta,
@@ -12,6 +12,6 @@ def crerar_reporte(comentario_id, usuario_que_reporta, usuario_reportado, motivo
         "usuarioBaneado": False,
         "adminId": None,
         "createAt": datetime.now(),
-        "updateAt": datetime.now()
+        "updatedAt": datetime.now()
     }
     return reporte

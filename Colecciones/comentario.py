@@ -10,6 +10,6 @@ def crear_comentario(autor_id, contenido_id, tipo_contenido, texto):
         "estado": "activo",
         "cantidadReportes": 0,
         "createdAt": datetime.now(),
-        "updateAt": datetime.now()
+        "updatedAt": datetime.now()
         }
     return comentario

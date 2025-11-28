@@ -19,6 +19,6 @@ def crear_evento(comercio_creador_id, titulo, descripcion, fecha_inicio, fecha_f
         "ubicacion": ubicacion,
         "estado": "activo",
         "createdAt": datetime.now(),
-        "updateAt": datetime.now()
+        "updatedAt": datetime.now()
     }
     return evento
