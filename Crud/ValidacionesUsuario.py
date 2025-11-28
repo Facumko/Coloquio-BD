@@ -3,10 +3,7 @@ sys.path.append('..')
 from Conexion import bd
 
 def aplicar_validacion_usuarios():
-    """
-    Aplica validación JSON Schema a la colección de usuarios.
-    Esto asegura la integridad de los datos insertados.
-    """
+
     try:
         bd.command({
             "collMod": "usuarios",
@@ -83,7 +80,6 @@ def aplicar_validacion_usuarios():
 
 
 def verificar_validacion():
-    """Verifica si la validación está activa"""
     try:
         coleccion_info = bd.command({"listCollections": 1, "filter": {"name": "usuarios"}})
         if coleccion_info["cursor"]["firstBatch"]:

@@ -7,10 +7,9 @@ from MenuUsuarios import menu_crud_usuarios
 from MenuModeracion import menu_moderacion
 from MenuNotificaciones import menu_ver_notificaciones
 def menu_principal():
-    """Menú principal del sistema"""
     while True:
         limpiar_pantalla()
-        mostrar_encabezado("🏪 SISTEMA DONDEQUEDA - MONGODB")
+        mostrar_encabezado(" MENU PRINCIPAL")
         
         print("\n MÓDULOS DISPONIBLES:\n")
         print("1.  CRUD de Usuarios")
@@ -20,7 +19,7 @@ def menu_principal():
         print("5.  Utilidades")
         print("0.  Salir")
         
-        opcion = input("\n👉 Selecciona un módulo: ").strip()
+        opcion = input("\n Selecciona un módulo: ").strip()
         
         if opcion == "1":
             menu_crud_usuarios()
