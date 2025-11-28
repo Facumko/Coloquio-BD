@@ -100,3 +100,30 @@ def limpiar_bd_confirmacion():
         print("\n🚫 Operación cancelada")
     
     pausar()
+
+
+def menu_utilidades():
+    """Menú de utilidades del sistema"""
+    while True:
+        limpiar_pantalla()
+        mostrar_encabezado("UTILIDADES DEL SISTEMA")
+        
+        print("\n1. 🔄 Cargar datos de prueba (s.py)")
+        print("2. 📊 Ver estadísticas generales")
+        print("3. 🗑️  Limpiar base de datos")
+        print("0. ⬅️  Volver")
+        
+        opcion = input("\n👉 Selecciona una opción: ").strip()
+        
+        if opcion == "1":
+            print("\n💡 Para cargar datos ejecuta: python s.py")
+            pausar()
+        elif opcion == "2":
+            mostrar_estadisticas_generales()
+        elif opcion == "3":
+            limpiar_bd_confirmacion()
+        elif opcion == "0":
+            break
+        else:
+            print("❌ Opción inválida")
+            pausar()

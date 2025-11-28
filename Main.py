@@ -1,11 +1,17 @@
+
 import sys
+
+# Añadir la carpeta Menu al path
 sys.path.append('.')
-from Menu.menu_principal import menu_principal
+sys.path.append('./Menu')
+
+# Importar el menú principal
+from MenuPrincipal import menu_principal
 
 if __name__ == "__main__":
     try:
         print("\n" + "="*70)
-        print("🏪 BIENVENIDO AL SISTEMA DONDEQU EDA")
+        print("🏪 BIENVENIDO AL SISTEMA DONDEQUEDA")
         print("="*70)
         print("\n💡 Sistema de gestión de comercios con MongoDB")
         print("📊 Versión 1.0 - Coloquio Base de Datos II\n")
